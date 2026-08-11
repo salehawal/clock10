@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<!-- a: x0x3x4
+     Aseel structural chain — root/kernel (x0) · event loop (x3) · module boundary (x4).
+     Source of truth: architecture.md -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Decimal Chronometer — 10-Hour Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ============ x4 · design tokens ============ */
+  :root{
+    --bg: #f6f8fb;
+    --panel: #ffffff;
+    --ink: #10151f;
+    --ink-soft: #55617a;
+    --line: #e2e7f0;
+    --accent: #2f6fed;
+    --accent-soft: #e8effe;
+    --tick: #c7cfdd;
+    --tick-strong: #8f9bb3;
+    --lcd-bg: #101725;
+    --lcd-fg: #6fe3c4;
+  }
+
+  /* ============ base ============ */
+  *{ box-sizing: border-box; }
+
+  html, body{
+    margin:0;
+    padding:0;
+    height:100%;
+    background: var(--bg);
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+  }
+
+  /* ============ stage ============ */
+  .stage{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:22px;
+    padding:40px 20px 56px;
+    width:100%;
+    max-width:560px;
+  }
+
+  .heading{ text-align:center; }
+
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.32em;
+    text-transform:uppercase;
+    color: var(--accent);
+    margin:0 0 8px;
+  }
+
+  h1{
+    margin:0;
+    font-weight:700;
+    font-size:clamp(26px, 6vw, 36px);
+    letter-spacing:-0.01em;
+    color: var(--ink);
+  }
+
+  .subtitle{
+    margin:8px 0 0;
+    font-size:15px;
+    color: var(--ink-soft);
+  }
+
+  /* ============ dial ============ */
+  .dial-wrap{
+    position:relative;
+    width:min(78vw, 360px);
+    aspect-ratio:1/1;
+    filter: drop-shadow(0 12px 28px rgba(20,30,60,0.10));
+  }
+
+  svg{ width:100%; height:100%; display:block; }
+
+  /* ============ readout ============ */
+  .readout{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    font-family:'JetBrains Mono', monospace;
+    background: var(--lcd-bg);
+    padding: 16px 28px;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(16,23,37,0.18);
+  }
+
+  .readout .digits{
+    font-size: clamp(26px, 5vw, 34px);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--lcd-fg);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 14px rgba(111,227,196,0.45);
+  }
+
+  .readout .unit{
+    font-size:10px;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color: #7c8aa3;
+  }
+
+  /* ============ meta row ============ */
+  .meta-row{
+    display:flex;
+    justify-content:space-between;
+    width:100%;
+    max-width:320px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;
+    color: var(--ink-soft);
+  }
+
+  .meta-row span:last-child{
+    color: var(--accent);
+    font-weight:500;
+  }
+
+  /* ============ footnote ============ */
+  .footnote{
+    max-width:380px;
+    text-align:center;
+    font-size:13px;
+    line-height:1.6;
+    color: var(--ink-soft);
+  }
+
+  .footnote b{
+    color: var(--ink);
+    font-weight:600;
+  }
+
+  /* ============ accessibility ============ */
+  @media (prefers-reduced-motion: reduce){
+    #secondHand, #minuteHand, #hourHand{ transition:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <header class="heading">
+    <p class="eyebrow">Le Temps Décimal · Cairo, Egypt</p>
+    <h1>Decimal Chronometer</h1>
+    <p class="subtitle">One day, ten hours — Egypt's standard time, redrawn</p>
+  </header>
+
+  <div class="dial-wrap" aria-hidden="true">
+    <svg viewBox="0 0 500 500">
+      <!-- outer ring -->
+      <circle cx="250" cy="250" r="238" fill="#ffffff" stroke="#e2e7f0" stroke-width="2"/>
+      <circle cx="250" cy="250" r="212" fill="#ffffff"/>
+      <circle cx="250" cy="250" r="212" fill="none" stroke="#dde3ee" stroke-width="1.5"/>
+
+      <!-- minor ticks: 100 decimal-minutes -->
+      <g id="minorTicks" stroke="#c7cfdd" stroke-width="1.25"></g>
+      <!-- major ticks: every decimal hour -->
+      <g id="majorTicks" stroke="#2f6fed" stroke-width="3"></g>
+
+      <!-- numerals 0-9 -->
+      <g id="numerals" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="30" fill="#10151f" text-anchor="middle"></g>
+
+      <!-- small label -->
+      <text x="250" y="150" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" letter-spacing="2" fill="#8f9bb3">DÉCIMAL</text>
+
+      <!-- date / normal-time complication window -->
+      <g id="dateTimeWindow">
+        <rect x="172" y="292" width="156" height="50" rx="6" fill="#f6f8fb" stroke="#c7cfdd" stroke-width="1.5"/>
+        <text id="dateText" x="250" y="311" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="600" fill="#10151f" letter-spacing="0.5">--- -- ----</text>
+        <text id="timeText" x="250" y="330" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="17" font-weight="700" fill="#10151f" letter-spacing="0.5">--:--:--</text>
+      </g>
+
+      <!-- hands -->
+      <g id="hourHand" style="transition: transform 0.2s ease-out;">
+        <line x1="250" y1="250" x2="250" y2="140" stroke="#10151f" stroke-width="7" stroke-linecap="round"/>
+      </g>
+      <g id="minuteHand" style="transition: transform 0.2s ease-out;">
+        <line x1="250" y1="250" x2="250" y2="90" stroke="#10151f" stroke-width="4.5" stroke-linecap="round"/>
+      </g>
+      <g id="secondHand">
+        <line x1="250" y1="278" x2="250" y2="72" stroke="#2f6fed" stroke-width="2" stroke-linecap="round"/>
+      </g>
+
+      <circle cx="250" cy="250" r="11" fill="#ffffff" stroke="#10151f" stroke-width="2.5"/>
+      <circle cx="250" cy="250" r="3.5" fill="#2f6fed"/>
+    </svg>
+  </div>
+
+  <div class="readout" role="timer" aria-live="polite" aria-label="Decimal time">
+    <span class="digits" id="digitalReadout">0.00.00</span>
+    <span class="unit">dec. time</span>
+  </div>
+
+  <div class="meta-row">
+    <span id="standardTime">--:--:--</span>
+    <span id="progressPct">0.0% of day</span>
+  </div>
+
+  <p class="footnote">
+    A standard day is redrawn into <b>10 decimal hours</b> of 100 decimal minutes each,
+    100 decimal seconds to the minute. The hands above sweep continuously —
+    each decimal second is slightly shorter than the one you're used to (0.864s).
+  </p>
+</div>
+
+<script>
+  /* =====================================================================
+     a: x0x3x4 — Aseel structural chain (source of truth: architecture.md)
+     x4 · module boundary: everything below lives in one self-contained scope
+     x0 · root/kernel: bootstrapping, constants, dial construction
+     x3 · event loop: continuous requestAnimationFrame render cycle
+     ===================================================================== */
+  (function(){
+    "use strict";
+
+    /* ---------- x0 · constants ---------- */
+    const NS = "http://www.w3.org/2000/svg";
+    const CX = 250, CY = 250;
+    const DAY_MS = 86400000;
+    const CAIRO_TZ = 'Africa/Cairo';
+    const cairoFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: CAIRO_TZ, hour12: false,
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const cairoDateFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: CAIRO_TZ, day: '2-digit', month: 'short', year: 'numeric'
+    });
+
+    /* ---------- x0 · DOM refs ---------- */
+    const minorTicks = document.getElementById('minorTicks');
+    const majorTicks = document.getElementById('majorTicks');
+    const numerals   = document.getElementById('numerals');
+    const hourHand   = document.getElementById('hourHand');
+    const minuteHand = document.getElementById('minuteHand');
+    const secondHand = document.getElementById('secondHand');
+    const digitalReadout = document.getElementById('digitalReadout');
+    const standardTime   = document.getElementById('standardTime');
+    const progressPct    = document.getElementById('progressPct');
+    const dateText = document.getElementById('dateText');
+    const timeText = document.getElementById('timeText');
+
+    /* ---------- x0 · pure helpers ---------- */
+    function polar(radius, angleDeg){
+      const a = (angleDeg - 90) * Math.PI / 180;
+      return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) };
+    }
+
+    function pad(n, width){
+      return String(Math.floor(n)).padStart(width, '0');
+    }
+
+    /* ---------- x0 · Cairo wall-clock parts ---------- */
+    function getCairoTimeParts(now){
+      const parts = cairoFormatter.formatToParts(now);
+      const obj = {};
+      for(const p of parts){ if(p.type !== 'literal') obj[p.type] = Number(p.value); }
+      // milliseconds are timezone-agnostic (same instant), so borrow them straight from `now`
+      return { h: obj.hour % 24, m: obj.minute, s: obj.second, ms: now.getMilliseconds() };
+    }
+
+    /* ---------- x0 · decimal-time conversion (pure) ---------- */
+    function toDecimalParts(msSinceMidnight){
+      const fraction = msSinceMidnight / DAY_MS;
+      const totalSeconds = fraction * 100000;          // 10 h × 100 min × 100 s
+      const dHour   = Math.floor(totalSeconds / 10000);
+      const dMinute = Math.floor((totalSeconds % 10000) / 100);
+      const dSecond = totalSeconds % 100;
+      return { fraction, dHour, dMinute, dSecond };
+    }
+
+    function handAngles({ dHour, dMinute, dSecond }){
+      return {
+        hour:   (dHour   + dMinute / 100) * 36,
+        minute: (dMinute + dSecond / 100) * 3.6,
+        second: dSecond * 3.6
+      };
+    }
+
+    /* ---------- x0 · dial construction (bootstrap) ---------- */
+    function buildDial(){
+      for(let i = 0; i < 100; i++){
+        const angle = i * 3.6;
+        const isMajor = i % 10 === 0;
+        if(!isMajor){
+          const outer = polar(210, angle);
+          const inner = polar(i % 5 === 0 ? 196 : 202, angle);
+          const t = document.createElementNS(NS, "line");
+          t.setAttribute("x1", outer.x); t.setAttribute("y1", outer.y);
+          t.setAttribute("x2", inner.x); t.setAttribute("y2", inner.y);
+          minorTicks.appendChild(t);
+        }
+      }
+
+      for(let h = 0; h < 10; h++){
+        const angle = h * 36;
+        const outer = polar(210, angle);
+        const inner = polar(188, angle);
+        const t = document.createElementNS(NS, "line");
+        t.setAttribute("x1", outer.x); t.setAttribute("y1", outer.y);
+        t.setAttribute("x2", inner.x); t.setAttribute("y2", inner.y);
+        majorTicks.appendChild(t);
+
+        const labelPos = polar(160, angle);
+        const label = document.createElementNS(NS, "text");
+        label.setAttribute("x", labelPos.x);
+        label.setAttribute("y", labelPos.y + 11);
+        label.textContent = h;
+        numerals.appendChild(label);
+      }
+    }
+
+    /* ---------- x3 · render loop (event loop) ---------- */
+    function render(now){
+      const { h, m, s, ms } = getCairoTimeParts(now);
+      const msSinceMidnight = h * 3600000 + m * 60000 + s * 1000 + ms;
+      const dec = toDecimalParts(msSinceMidnight);
+      const { hour, minute, second } = handAngles(dec);
+
+      hourHand.setAttribute('transform', `rotate(${hour} ${CX} ${CY})`);
+      minuteHand.setAttribute('transform', `rotate(${minute} ${CX} ${CY})`);
+      secondHand.setAttribute('transform', `rotate(${second} ${CX} ${CY})`);
+
+      digitalReadout.textContent = `${pad(dec.dHour, 1)}.${pad(dec.dMinute, 2)}.${pad(dec.dSecond, 2)}`;
+      standardTime.textContent = `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)} EET/EEST`;
+      progressPct.textContent = `${(dec.fraction * 100).toFixed(1)}% of day`;
+
+      dateText.textContent = cairoDateFormatter.format(now).toUpperCase();
+      timeText.textContent = `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)}`;
+    }
+
+    function loop(){
+      render(new Date());
+      requestAnimationFrame(loop);
+    }
+
+    /* ---------- x0 · boot ---------- */
+    buildDial();
+    requestAnimationFrame(loop);
+  })();
+</script>
+
+</body>
+</html>

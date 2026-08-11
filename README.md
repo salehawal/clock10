@@ -3,7 +3,7 @@
 > One day, ten hours — Egypt's standard time, redrawn.
 
 <p align="center">
-  <img src="screenshot.png" alt="Decimal Chronometer — 10-hour decimal clock UI">
+  <img src="screenshot.jpg" alt="Decimal Chronometer — 10-hour decimal clock UI">
 </p>
 
 A single-file web application that renders the current time in **decimal (metric) time**:
